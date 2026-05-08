@@ -1,0 +1,344 @@
+{
+  "name": "Playlist Inteligente REAL (Spotify + Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "bf53d5ce-233d-4e61-88d6-e7cfb132d64c",
+        "formTitle": "🎧 Playlist Inteligente",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Humor"
+            },
+            {
+              "fieldLabel": "Cidade"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -192
+      ],
+      "id": "b3dc7786-0b4b-4eb5-a339-3fc063d65343",
+      "webhookId": "bf53d5ce-233d-4e61-88d6-e7cfb132d64c"
+    },
+    {
+      "parameters": {
+        "url": "https://geocoding-api.open-meteo.com/v1/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ $json.Cidade }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Geo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        480,
+        -192
+      ],
+      "id": "cdf2f840-65f3-4305-ba28-87b955dbe4ee"
+    },
+    {
+      "parameters": {
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "={{ $json.results[0].latitude }}"
+            },
+            {
+              "name": "longitude",
+              "value": "={{ $json.results[0].longitude }}"
+            },
+            {
+              "name": "current",
+              "value": "temperature_2m,weather_code"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Clima",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        672,
+        -192
+      ],
+      "id": "727dd7cb-7d2e-474f-a0ca-af91e6eeb734"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  humor: $node['Form'].json.Humor,\n  cidade: $node['Form'].json.Cidade,\n  temperatura: $node['Clima'].json.current.temperature_2m,\n  clima: $node['Clima'].json.current.weather_code\n}}];"
+      },
+      "name": "Processar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -192
+      ],
+      "id": "35ffea84-a7a9-420b-9679-eef202de1698"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=XXXX",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Humor: feliz\\nCidade: sumare\\nTemperatura: 28.7\\nClima: 1\\n\\nResponda SOMENTE JSON:\\n{\\n\\\"tipoPlaylist\\\":\\\"\\\",\\n\\\"emoji\\\":\\\"\\\",\\n\\\"querySpotify\\\":\\\"\\\",\\n\\\"justificativa\\\":\\\"\\\"\\n}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "name": "Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1072,
+        -192
+      ],
+      "id": "6666e2ab-b284-48d8-8630-8b2ef28d0e0e"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json.candidates[0].content.parts[0].text;\nconst data = JSON.parse(text);\nreturn [{ json: data }];"
+      },
+      "name": "Parse Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        -192
+      ],
+      "id": "685347af-582a-409b-9ac1-079d4589adc6"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.spotify.com/v1/users/{{$credentials.spotifyOAuth2Api.user_id}}/playlists",
+        "authentication": "oAuth2",
+        "options": {}
+      },
+      "name": "Criar Playlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1472,
+        -192
+      ],
+      "id": "aaf99d3c-6434-4b4b-8391-99a174d78ace"
+    },
+    {
+      "parameters": {
+        "url": "https://api.spotify.com/v1/search",
+        "authentication": "oAuth2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $node['Parse Gemini'].json.querySpotify }}"
+            },
+            {
+              "name": "type",
+              "value": "track"
+            },
+            {
+              "name": "limit",
+              "value": "3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Buscar Músicas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1680,
+        -192
+      ],
+      "id": "7d9f0c31-a9c9-4fd1-9a60-d03882c4a1e0"
+    },
+    {
+      "parameters": {
+        "jsCode": "const tracks = $json.tracks.items;\nconst playlistId = $node['Criar Playlist'].json.id;\n\nreturn [{ json: {\n  playlistId,\n  uris: tracks.slice(0,3).map(t => t.uri),\n  info: $node['Parse Gemini'].json\n}}];"
+      },
+      "name": "Preparar Tracks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        -192
+      ],
+      "id": "b7494435-f935-4d37-a1d5-1eaae42aa431"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.spotify.com/v1/playlists/{{$json.playlistId}}/tracks",
+        "authentication": "oAuth2",
+        "options": {}
+      },
+      "name": "Adicionar Músicas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2080,
+        -192
+      ],
+      "id": "e194f094-4a64-4915-b8c1-55e1a4e6feb3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const info = $node['Preparar Tracks'].json.info;\n\nreturn [{ json: {\n  resultado: `🎧 ${info.tipoPlaylist} ${info.emoji}\\n\\n💡 ${info.justificativa}\\n\\nPlaylist criada com sucesso no Spotify!`\n}}];"
+      },
+      "name": "Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        -192
+      ],
+      "id": "0013bab7-90c5-42c1-bc4c-2e6afd1d2edc"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Form": {
+      "main": [
+        [
+          {
+            "node": "Geo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Geo": {
+      "main": [
+        [
+          {
+            "node": "Clima",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clima": {
+      "main": [
+        [
+          {
+            "node": "Processar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar": {
+      "main": [
+        [
+          {
+            "node": "Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini": {
+      "main": [
+        [
+          {
+            "node": "Criar Playlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar Playlist": {
+      "main": [
+        [
+          {
+            "node": "Buscar Músicas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Músicas": {
+      "main": [
+        [
+          {
+            "node": "Preparar Tracks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Tracks": {
+      "main": [
+        [
+          {
+            "node": "Adicionar Músicas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adicionar Músicas": {
+      "main": [
+        [
+          {
+            "node": "Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "26cf1b96-3971-4e38-8072-dfde31c761ce",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d23487d9a2303f8c578d7661ec71e0c995822bef754d0aa488e928d8f19e89e0"
+  },
+  "id": "ATVmxqL1Qi8bQHbd",
+  "tags": []
+}
